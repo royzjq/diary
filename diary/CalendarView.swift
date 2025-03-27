@@ -24,18 +24,11 @@ struct CalendarView: View {
                         .foregroundColor(.blue)
                         .imageScale(.large)
                 }
-                .disabled(isAnimating)
                 
                 Spacer()
                 
-                ZStack {
-                    Text(monthYearString(from: currentMonth))
-                        .font(.title2.bold())
-                        .foregroundColor(.primary)
-                        .offset(x: monthOffset)
-                        .clipped()
-                }
-                .frame(height: 30)
+                Text(currentMonth.formatted(date: .abbreviated, time: .omitted))
+                    .font(.headline)
                 
                 Spacer()
                 
@@ -44,25 +37,27 @@ struct CalendarView: View {
                         .foregroundColor(.blue)
                         .imageScale(.large)
                 }
-                .disabled(isAnimating)
             }
             .padding(.horizontal)
             
             // Days of week header
-            HStack(spacing: 0) {
+            HStack {
                 ForEach(daysOfWeek, id: \.self) { day in
                     Text(day)
+                        .font(.caption)
                         .frame(maxWidth: .infinity)
-                        .font(.caption.bold())
-                        .foregroundColor(day == "Sun" || day == "Sat" ? .blue : .gray)
                 }
             }
             
             // Calendar grid
-            LazyVGrid(columns: Array(repeating: GridItem(.flexible(), spacing: 0), count: 7), spacing: 0) {
-                ForEach(daysInMonth(), id: \.self) { date in
+            LazyVGrid(columns: Array(repeating: GridItem(.flexible()), count: 7), spacing: 8) {
+                ForEach(days, id: \.self) { date in
                     if let date = date {
-                        DayCell(date: date, selectedDate: $selectedDate)
+                        DayCell(
+                            date: date,
+                            isSelected: calendar.isDate(date, inSameDayAs: selectedDate),
+                            onDateSelected: { selectedDate = date }
+                        )
                     } else {
                         Color.clear
                             .aspectRatio(1, contentMode: .fill)
@@ -74,68 +69,36 @@ struct CalendarView: View {
         .background(Color(.systemBackground))
     }
     
-    private func daysInMonth() -> [Date?] {
-        let startOfMonth = calendar.date(from: calendar.dateComponents([.year, .month], from: currentMonth))!
-        let firstWeekday = calendar.component(.weekday, from: startOfMonth)
-        let numberOfDaysInMonth = calendar.range(of: .day, in: .month, for: currentMonth)?.count ?? 0
+    private var days: [Date?] {
+        let start = calendar.date(from: calendar.dateComponents([.year, .month], from: currentMonth))!
+        let range = calendar.range(of: .day, in: .month, for: start)!
         
-        var days: [Date?] = Array(repeating: nil, count: firstWeekday - 1)
+        let firstWeekday = calendar.component(.weekday, from: start)
+        let previousMonthDays = firstWeekday - 1
         
-        for day in 1...numberOfDaysInMonth {
-            if let date = calendar.date(byAdding: .day, value: day - 1, to: startOfMonth) {
-                days.append(date)
+        let totalDays = range.count
+        let totalCells = ((totalDays + previousMonthDays + 6) / 7) * 7
+        
+        var days: [Date?] = Array(repeating: nil, count: totalCells)
+        
+        for day in 0..<totalDays {
+            if let date = calendar.date(byAdding: .day, value: day, to: start) {
+                days[day + previousMonthDays] = date
             }
         }
-        
-        let remainingDays = 42 - days.count // 6 rows * 7 days
-        days.append(contentsOf: Array(repeating: nil, count: remainingDays))
         
         return days
     }
     
-    private func monthYearString(from date: Date) -> String {
-        let formatter = DateFormatter()
-        formatter.dateFormat = "MMMM yyyy"
-        return formatter.string(from: date)
-    }
-    
     private func previousMonth() {
-        isAnimating = true
-        withAnimation(.easeInOut(duration: 0.3)) {
-            monthOffset = 100
-        }
-        
-        DispatchQueue.main.asyncAfter(deadline: .now() + 0.15) {
-            if let newDate = calendar.date(byAdding: .month, value: -1, to: currentMonth) {
-                currentMonth = newDate
-                monthOffset = -100
-                withAnimation(.easeInOut(duration: 0.3)) {
-                    monthOffset = 0
-                }
-            }
-            DispatchQueue.main.asyncAfter(deadline: .now() + 0.3) {
-                isAnimating = false
-            }
+        if let newDate = calendar.date(byAdding: .month, value: -1, to: currentMonth) {
+            currentMonth = newDate
         }
     }
     
     private func nextMonth() {
-        isAnimating = true
-        withAnimation(.easeInOut(duration: 0.3)) {
-            monthOffset = -100
-        }
-        
-        DispatchQueue.main.asyncAfter(deadline: .now() + 0.15) {
-            if let newDate = calendar.date(byAdding: .month, value: 1, to: currentMonth) {
-                currentMonth = newDate
-                monthOffset = 100
-                withAnimation(.easeInOut(duration: 0.3)) {
-                    monthOffset = 0
-                }
-            }
-            DispatchQueue.main.asyncAfter(deadline: .now() + 0.3) {
-                isAnimating = false
-            }
+        if let newDate = calendar.date(byAdding: .month, value: 1, to: currentMonth) {
+            currentMonth = newDate
         }
     }
 }
@@ -143,7 +106,8 @@ struct CalendarView: View {
 struct DayCell: View {
     @Environment(\.managedObjectContext) private var viewContext
     let date: Date
-    @Binding var selectedDate: Date
+    let isSelected: Bool
+    let onDateSelected: () -> Void
     
     private let calendar = Calendar.current
     
@@ -156,16 +120,12 @@ struct DayCell: View {
         calendar.isDateInToday(date)
     }
     
-    private var isSelected: Bool {
-        calendar.isDate(date, inSameDayAs: selectedDate)
-    }
-    
     var body: some View {
         let entry = CoreDataManager.shared.getEntryForDate(date)
         
         Button(action: {
             withAnimation(.easeInOut(duration: 0.2)) {
-                selectedDate = date
+                onDateSelected()
             }
         }) {
             VStack(spacing: 8) {
